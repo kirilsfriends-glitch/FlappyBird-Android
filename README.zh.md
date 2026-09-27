@@ -3,7 +3,7 @@
 **面向中文、俄文、英文的级联密码。**
 纯 Python 实现，零外部依赖，全部原语均通过官方测试向量校验。
 
-[🇷🇺 Русский](README.md) · [🇬🇧 English](README.en.md) · 🇨🇳 中文 · [格式规范](docs/SPEC.md) · [威胁模型](docs/THREAT_MODEL.md)
+[🇷🇺 Русский](README.md) · [🇬🇧 English](README.en.md) · 🇨🇳 中文 · [📱 安卓应用](docs/ANDROID.md) · [格式规范](docs/SPEC.md) · [威胁模型](docs/THREAT_MODEL.md)
 
 ```
                     明文
@@ -37,6 +37,18 @@
 | **口令爆破** | 非拉丁口令若不规范化会损失熵 | 三级 KDF：SHA3-512 → scrypt（内存）→ PBKDF2-SHA512（时间） |
 
 ---
+
+## 安卓应用
+
+[**⬇ 下载 APK**](https://github.com/kirilsfriends-glitch/FlappyBird-Android/releases/latest) · [详细说明](docs/ANDROID.md)
+
+同一套密码方案的 Java 实现：约 140 KB，**零权限**（连 `INTERNET` 都没有），
+界面支持中文、俄文、英文，最低 Android 5.0。文本、文件、X25519 密钥、
+Shamir 分片与内置自检一应俱全；每次持续集成都会验证 Java 与 Python 逐字节一致。
+
+```bash
+cd android && gradle assembleRelease      # 需要 Android SDK 34 与 JDK 17
+```
 
 ## 快速上手
 

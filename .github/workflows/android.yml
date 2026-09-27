@@ -41,7 +41,7 @@ jobs:
       - name: Python открывает контейнеры, созданные Java
         run: python tools/verify_java_containers.py java-containers.txt
 
-  # Сборка APK.
+  # Сборка APK и публикация релиза.
   apk:
     runs-on: ubuntu-latest
     needs: core-jvm
@@ -61,35 +61,112 @@ jobs:
         working-directory: android
         run: gradle --no-daemon --stacktrace assembleDebug assembleRelease
 
-      - name: Размеры
-        run: ls -la android/app/build/outputs/apk/debug android/app/build/outputs/apk/release
+      - name: Проверка готового APK
+        id: verify
+        run: |
+          set -euo pipefail
+          cp android/app/build/outputs/apk/release/app-release.apk triglyph-release.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk triglyph-debug.apk
+
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          echo "build-tools: $BT"
+          "$BT/aapt2" dump badging triglyph-release.apk > badging.txt
+
+          # ГЛАВНОЕ: приложение обязано просить ноль разрешений
+          if grep -q "uses-permission" badging.txt; then
+            echo "::error::APK запрашивает разрешения!"
+            grep "uses-permission" badging.txt
+            exit 1
+          fi
+
+          # подпись должна быть валидной, иначе телефон откажется ставить
+          "$BT/apksigner" verify --verbose triglyph-release.apk
+
+          unzip -l triglyph-release.apk | grep -E "assets/test-vectors.txt|classes.dex" || true
+
+          {
+            echo "permissions=$(grep -c 'uses-permission' badging.txt || true)"
+            echo "sdk=$(grep -o "sdkVersion:'[0-9]*'" badging.txt | head -1)"
+            echo "target=$(grep -o "targetSdkVersion:'[0-9]*'" badging.txt | head -1)"
+            echo "relsize=$(stat -c%s triglyph-release.apk)"
+            echo "dbgsize=$(stat -c%s triglyph-debug.apk)"
+            echo "relsha=$(sha256sum triglyph-release.apk | cut -d' ' -f1)"
+            echo "dbgsha=$(sha256sum triglyph-debug.apk | cut -d' ' -f1)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Самопроверка ядра (строка для заметок к релизу)
+        id: check
+        run: |
+          set -euo pipefail
+          mkdir -p out/classes
+          javac -encoding UTF-8 -nowarn -d out/classes \
+            $(find android/app/src/main/java/ai/triglyph/core -name '*.java')
+          java -cp out/classes ai.triglyph.core.SelfCheck docs/test-vectors.txt | tee selfcheck.txt
+          echo "summary=$(tail -1 selfcheck.txt)" >> "$GITHUB_OUTPUT"
+          echo "groups<<EOF" >> "$GITHUB_OUTPUT"
+          grep -E "^  [a-z]" selfcheck.txt | tr -d '\r' >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v4
         with:
           name: triglyph-apk
-          path: android/app/build/outputs/apk/**/*.apk
+          path: |
+            triglyph-release.apk
+            triglyph-debug.apk
           if-no-files-found: error
 
       - name: Выложить релиз с APK
         env:
           GH_TOKEN: ${{ github.token }}
+          RELSIZE: ${{ steps.verify.outputs.relsize }}
+          DBGSIZE: ${{ steps.verify.outputs.dbgsize }}
+          RELSHA: ${{ steps.verify.outputs.relsha }}
+          DBGSHA: ${{ steps.verify.outputs.dbgsha }}
+          SDK: ${{ steps.verify.outputs.sdk }}
+          TARGET: ${{ steps.verify.outputs.target }}
+          CHECK: ${{ steps.check.outputs.summary }}
+          GROUPS: ${{ steps.check.outputs.groups }}
         run: |
+          set -euo pipefail
           tag="apk-$(date -u +%Y%m%d-%H%M%S)"
-          notes=$(cat <<'EOF'
-          **TRIGLYPH / ТРИГЛИФ / 三纹密码** — приложение для Android.
+          cat > notes.md <<EOF
+          ## ТРИГЛИФ · TRIGLYPH · 三纹密码
 
-          * каскад XChaCha20-Poly1305 → AES-256-GCM → Threefish-1024-CTR → HMAC-SHA3-512;
-          * ноль разрешений, никакой сети;
-          * интерфейс на русском, английском и китайском;
-          * встроенная самопроверка на эталонных векторах Python-версии.
+          Приложение для Android: каскадное шифрование
+          **XChaCha20-Poly1305 → AES-256-GCM → Threefish-1024-CTR → HMAC-SHA3-512**,
+          интерфейс на русском, английском и китайском.
 
-          Ставить: `triglyph-release.apk` (разрешите установку из неизвестных источников).
+          | | |
+          |---|---|
+          | Разрешений | **0** (нет даже доступа в сеть) |
+          | Минимальная версия | Android 5.0 ($SDK) |
+          | Собрано под | $TARGET |
+          | \`triglyph-release.apk\` | $RELSIZE байт |
+          | \`triglyph-debug.apk\` | $DBGSIZE байт |
+
+          **Самопроверка ядра на эталонных векторах Python-версии:** \`$CHECK\`
+
+          \`\`\`
+          $GROUPS
+          \`\`\`
+
+          ### Установка
+          1. Скачайте \`triglyph-release.apk\` на телефон.
+          2. Откройте файл; Android спросит разрешение ставить приложения из этого источника — разрешите.
+          3. Готово. Приложению не нужны ни интернет, ни доступ к файлам: файлы вы выбираете сами через системный диалог.
+
+          ### Проверка подлинности файла
+          \`\`\`
+          sha256  triglyph-release.apk  $RELSHA
+          sha256  triglyph-debug.apk    $DBGSHA
+          \`\`\`
+
+          ### 安装 / Installation
+          中文与英文界面已内置：右上角切换 РУС / ENG / 中文。
+          The UI ships in Russian, English and Chinese — switch in the top right corner.
           EOF
-          )
-          cp android/app/build/outputs/apk/release/app-release.apk triglyph-release.apk
-          cp android/app/build/outputs/apk/debug/app-debug.apk triglyph-debug.apk
           gh release create "$tag" \
             --title "TRIGLYPH APK ($tag)" \
-            --notes "$notes" \
+            --notes-file notes.md \
             --target "${{ github.sha }}" \
             triglyph-release.apk triglyph-debug.apk

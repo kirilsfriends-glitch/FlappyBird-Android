@@ -3,7 +3,7 @@
 **A cascade cipher built for Chinese, Russian and English text.**
 Pure Python, zero dependencies, every primitive checked against official test vectors.
 
-[🇷🇺 Русский](README.md) · 🇬🇧 English · [🇨🇳 中文](README.zh.md) · [Format spec](docs/SPEC.md) · [Threat model](docs/THREAT_MODEL.md)
+[🇷🇺 Русский](README.md) · 🇬🇧 English · [📱 Android app](docs/ANDROID.md) · [🇨🇳 中文](README.zh.md) · [Format spec](docs/SPEC.md) · [Threat model](docs/THREAT_MODEL.md)
 
 ```
                  plaintext
@@ -39,6 +39,19 @@ channels a byte cipher never looks at:
 | **Password cracking** | Non-Latin passwords lose entropy without normalisation | Three-stage KDF: SHA3-512 → scrypt (memory) → PBKDF2-SHA512 (time) |
 
 ---
+
+## Android app
+
+[**⬇ Download the APK**](https://github.com/kirilsfriends-glitch/FlappyBird-Android/releases/latest) · [details](docs/ANDROID.md)
+
+The same cipher rewritten in Java: ~140 KB, **zero permissions** (not even
+`INTERNET`), UI in Russian, English and Chinese, Android 5.0+. Text, files,
+X25519 keys, Shamir shares and a built-in self-check on the same reference
+vectors — every CI run proves Java and Python agree byte for byte.
+
+```bash
+cd android && gradle assembleRelease      # Android SDK 34 and JDK 17 required
+```
 
 ## Quick start
 

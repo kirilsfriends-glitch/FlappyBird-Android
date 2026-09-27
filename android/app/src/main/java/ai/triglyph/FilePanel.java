@@ -35,7 +35,9 @@ public class FilePanel extends MainActivity.Panel {
     private Button decBtn;
     private Button inspectBtn;
     private Ui.Chips suite;
+    private Ui.Chips profile;
     private TextView suiteLabel;
+    private TextView profileLabel;
     private Uri selected;
     private String selectedName = "";
     private long selectedSize;
@@ -96,6 +98,12 @@ public class FilePanel extends MainActivity.Panel {
         suite = new Ui.Chips(host, new String[]{"solo", "dual", "triple"},
                 new String[]{"SOLO ①", "DUAL ②", "TRIPLE ③"}, 1);
         card.addView(suite, Ui.lpMatch());
+
+        profileLabel = Ui.label(host, Strings.t("text.profile"));
+        card.addView(profileLabel, Ui.lpMatch());
+        profile = new Ui.Chips(host, new String[]{"fast", "balanced", "hard"},
+                new String[]{"8 MiB", "64 MiB", "256 MiB"}, 1);
+        card.addView(profile, Ui.lpMatch());
 
         LinearLayout row = Ui.row(host);
         encBtn = Ui.button(host, Strings.t("file.encrypt"), true);
@@ -255,6 +263,7 @@ public class FilePanel extends MainActivity.Panel {
         }
         final Uri inputUri = selected;
         final String suiteName = suite.value();
+        final String profileName = profile.value();
         String suggested = encrypting
                 ? selectedName + ".trg"
                 : (selectedName.endsWith(".trg")
@@ -274,7 +283,7 @@ public class FilePanel extends MainActivity.Panel {
                         Triglyph.KeyMaterial km = Triglyph.KeyMaterial.password(pw);
                         byte[] out = encrypting
                                 ? Triglyph.encrypt(data, km, new Triglyph.Options()
-                                .suite(suiteName).profile("balanced").pad(TextUtil.PAD_PADME))
+                                .suite(suiteName).profile(profileName).pad(TextUtil.PAD_PADME))
                                 : Triglyph.decrypt(data, km);
                         OutputStream os = host.getContentResolver().openOutputStream(outUri);
                         if (os == null) {
@@ -320,6 +329,7 @@ public class FilePanel extends MainActivity.Panel {
         pwLabel.setText(Strings.t("text.password"));
         password.setHint(Strings.t("text.password.hint"));
         suiteLabel.setText(Strings.t("text.suite"));
+        profileLabel.setText(Strings.t("text.profile"));
         if (selected == null) {
             fileInfo.setText(Strings.t("file.none"));
         }
