@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TRIGLYPH · ТРИГЛИФ · 三纹密码</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>三</text></svg>">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="glyph">三</span>
+    <div>
+      <h1>TRIGLYPH</h1>
+      <p class="sub">ТРИГЛИФ · 三纹密码</p>
+    </div>
+  </div>
+  <div class="topright">
+    <span class="badge" id="backend-badge">…</span>
+    <div class="langswitch" id="langswitch">
+      <button data-lang="ru" class="active">РУС</button>
+      <button data-lang="en">ENG</button>
+      <button data-lang="zh">中文</button>
+    </div>
+  </div>
+</header>
+
+<section class="cascade">
+  <div class="layer l1"><b>①</b> XChaCha20-Poly1305 <i>256 бит · нонс 192</i></div>
+  <div class="arrow">→</div>
+  <div class="layer l2"><b>②</b> AES-256-GCM <i>256 бит · NIST</i></div>
+  <div class="arrow">→</div>
+  <div class="layer l3"><b>③</b> Threefish-1024-CTR <i>1024 бит · 80 раундов</i></div>
+  <div class="arrow">→</div>
+  <div class="layer l4"><b>④</b> HMAC-SHA3-512 <i>целостность</i></div>
+</section>
+
+<main>
+  <div class="grid">
+    <!-- ЛЕВАЯ КОЛОНКА -->
+    <section class="card">
+      <h2 data-i18n="plainTitle">Открытый текст</h2>
+      <div class="samples">
+        <span data-i18n="samples">Примеры:</span>
+        <button class="chip" data-sample="zh">中文</button>
+        <button class="chip" data-sample="ru">Русский</button>
+        <button class="chip" data-sample="en">English</button>
+        <button class="chip" data-sample="mix">Mixed</button>
+      </div>
+      <textarea id="plain" rows="8" spellcheck="false"
+        placeholder="Введите сообщение…"></textarea>
+      <div class="meta"><span id="plain-meta"></span></div>
+
+      <label class="lbl" data-i18n="password">Пароль</label>
+      <div class="row">
+        <input id="password" type="password" value="весна-2026-密码-spring" spellcheck="false">
+        <button class="ghost" id="toggle-pw" title="показать">👁</button>
+        <select id="pwstyle" title="стиль генератора">
+          <option value="mixed">mixed</option>
+          <option value="hanzi">汉字</option>
+          <option value="cyrillic">кириллица</option>
+          <option value="latin">latin</option>
+        </select>
+        <button class="ghost" id="genpw" data-i18n="generate">Сгенерировать</button>
+      </div>
+      <div class="entropy"><div id="entropy-bar"></div><span id="entropy-text"></span></div>
+
+      <div class="options">
+        <label><span data-i18n="suite">Каскад</span>
+          <select id="suite">
+            <option value="triple" selected>triple — 3 слоя</option>
+            <option value="dual">dual — 2 слоя</option>
+            <option value="solo">solo — 1 слой</option>
+          </select>
+        </label>
+        <label><span data-i18n="profile">Профиль KDF</span>
+          <select id="profile">
+            <option value="fast">fast</option>
+            <option value="balanced" selected>balanced</option>
+            <option value="hard">hard</option>
+          </select>
+        </label>
+        <label><span data-i18n="armor">Броня</span>
+          <select id="armor">
+            <option value="auto" selected>auto — по языку</option>
+            <option value="hanzi">hanzi 汉字</option>
+            <option value="cyrillic">cyrillic кириллица</option>
+            <option value="latin">latin base64</option>
+            <option value="grouped">grouped 5-5-5</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="hidelen" checked>
+          <span data-i18n="hidelen">Скрывать длину (язык не виден)</span></label>
+        <label class="check"><input type="checkbox" id="stealth">
+          <span data-i18n="stealth">Стелс: убрать сигнатуру формата</span></label>
+      </div>
+
+      <div class="actions">
+        <button class="primary" id="btn-encrypt" data-i18n="encrypt">Зашифровать →</button>
+      </div>
+    </section>
+
+    <!-- ПРАВАЯ КОЛОНКА -->
+    <section class="card">
+      <h2 data-i18n="cipherTitle">Шифртекст</h2>
+      <textarea id="cipher" rows="14" spellcheck="false"
+        placeholder="Здесь появится броня…"></textarea>
+      <div class="meta"><span id="cipher-meta"></span></div>
+      <div class="actions">
+        <button class="primary" id="btn-decrypt" data-i18n="decrypt">← Расшифровать</button>
+        <button class="ghost" id="btn-copy" data-i18n="copy">Копировать</button>
+        <button class="ghost" id="btn-inspect" data-i18n="inspect">Разобрать заголовок</button>
+        <button class="ghost" id="btn-clear" data-i18n="clear">Очистить</button>
+      </div>
+      <div id="status" class="status"></div>
+      <table id="info" class="info"></table>
+    </section>
+  </div>
+
+  <!-- ШАМИР -->
+  <section class="card wide">
+    <h2 data-i18n="shamirTitle">Разделение секрета (схема Шамира)</h2>
+    <p class="hint" data-i18n="shamirHint">
+      Ключ режется на N частей: любые K восстановят его, K−1 не дадут ничего
+      (информационно-теоретическая стойкость).</p>
+    <div class="row">
+      <input id="secret" value="мой главный ключ 密钥 master key" spellcheck="false">
+      <label>K <input id="k" type="number" value="3" min="2" max="9" class="num"></label>
+      <label>N <input id="n" type="number" value="5" min="2" max="9" class="num"></label>
+      <select id="sharmor">
+        <option value="hanzi">汉字</option>
+        <option value="cyrillic">кириллица</option>
+        <option value="latin">latin</option>
+        <option value="grouped">grouped</option>
+      </select>
+      <button class="ghost" id="btn-split" data-i18n="split">Разрезать</button>
+      <button class="ghost" id="btn-combine" data-i18n="combine">Собрать из отмеченных</button>
+    </div>
+    <div id="shares" class="shares"></div>
+    <div id="shares-out" class="status"></div>
+  </section>
+
+  <!-- САМОПРОВЕРКА -->
+  <section class="card wide">
+    <h2 data-i18n="selftestTitle">Самопроверка на официальных тест-векторах</h2>
+    <p class="hint" data-i18n="selftestHint">
+      RFC 8439 (ChaCha20/Poly1305), FIPS-197 (AES), NIST GCM, RFC 5869 (HKDF),
+      RFC 7748 (X25519) плюс сквозные проверки контейнера.</p>
+    <button class="ghost" id="btn-selftest" data-i18n="runtests">Запустить проверки</button>
+    <div id="selftest" class="tests"></div>
+  </section>
+
+  <footer>
+    <p data-i18n="footer1">
+      Демонстрационный сервер: пароль уходит на сервер в теле запроса.
+      Для настоящей работы используйте CLI (<code>python -m triglyph</code>) или библиотеку.</p>
+    <p class="mono" id="backend-info"></p>
+  </footer>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>

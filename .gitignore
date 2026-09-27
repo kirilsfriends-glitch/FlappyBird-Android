@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.env
+
+# ключи и контейнеры — никогда не коммитим
+*.key
+*.pub
+*.tgl
+!docs/*.pub
+secret*

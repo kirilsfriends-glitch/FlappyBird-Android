@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "triglyph"
+version = "1.0.0"
+description = "TRIGLYPH / ТРИГЛИФ / 三纹密码 — каскадный шифр для китайского, русского и английского языков"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "TRIGLYPH authors" }]
+keywords = ["cryptography", "cipher", "xchacha20", "aes-gcm", "threefish", "chinese", "russian", "encryption"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Security :: Cryptography",
+  "Natural Language :: Russian",
+  "Natural Language :: Chinese (Simplified)",
+  "Natural Language :: English",
+]
+dependencies = []
+
+[project.optional-dependencies]
+fast = ["cryptography>=41"]
+argon2 = ["argon2-cffi>=21"]
+
+[project.scripts]
+triglyph = "triglyph.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/kirilsfriends-glitch/FlappyBird-Android"
+Source = "https://github.com/kirilsfriends-glitch/FlappyBird-Android"
+
+[tool.setuptools]
+packages = ["triglyph"]

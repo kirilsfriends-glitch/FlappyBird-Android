@@ -1,0 +1,38 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Self-test against official vectors
+        run: python -m triglyph selftest -v
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Benchmark (smoke)
+        run: python -m triglyph bench --kib 32
+
+  test-with-accelerator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install cryptography argon2-cffi
+      - name: Same tests with the OpenSSL backend
+        run: |
+          python -c "from triglyph.backend import BACKEND; print('backend:', BACKEND)"
+          python -m triglyph selftest -v
+          python -m unittest discover -s tests
