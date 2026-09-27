@@ -1,0 +1,209 @@
+name: android
+
+on:
+  push:
+    branches:
+      - arena/01a0e40b-flappybird-android
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # Быстрая проверка: ядро на Java должно сходиться с Python байт в байт.
+  core-jvm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Векторы в приложении совпадают с docs/
+        run: cmp docs/test-vectors.txt android/app/src/main/assets/test-vectors.txt
+
+      - name: Компиляция ядра
+        run: |
+          mkdir -p out/classes
+          javac -encoding UTF-8 -source 8 -target 8 -nowarn \
+            -d out/classes \
+            $(find android/app/src/main/java/ai/triglyph/core -name '*.java')
+
+      - name: Самопроверка на эталонных векторах Python
+        run: java -cp out/classes ai.triglyph.core.SelfCheck docs/test-vectors.txt --emit java-containers.txt
+
+      - name: Python открывает контейнеры, созданные Java
+        run: python tools/verify_java_containers.py java-containers.txt
+
+  # Сборка APK и публикация релиза.
+  apk:
+    runs-on: ubuntu-latest
+    needs: core-jvm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Сборка debug и release (оба приложения)
+        working-directory: android
+        run: gradle --no-daemon --stacktrace assembleDebug assembleRelease
+        # собирает и :app (TRIGLYPH), и :prank (six seven triple t) — общий проект
+
+      - name: Проверка готовых APK
+        id: verify
+        run: |
+          set -euo pipefail
+          cp android/app/build/outputs/apk/release/app-release.apk triglyph-release.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk triglyph-debug.apk
+          cp android/prank/build/outputs/apk/release/prank-release.apk sixseven-release.apk
+          cp android/prank/build/outputs/apk/debug/prank-debug.apk sixseven-debug.apk
+
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          echo "build-tools: $BT"
+
+          # ГЛАВНОЕ: оба приложения обязаны просить ноль разрешений
+          for apk in triglyph-release.apk sixseven-release.apk; do
+            "$BT/aapt2" dump badging "$apk" > "badging-$(basename "$apk" .apk).txt"
+            if grep -q "uses-permission" "badging-$(basename "$apk" .apk).txt"; then
+              echo "::error::APK $apk запрашивает разрешения!"
+              grep "uses-permission" "badging-$(basename "$apk" .apk).txt"
+              exit 1
+            fi
+            "$BT/apksigner" verify --verbose "$apk"
+          done
+
+          SDKV=$(grep -oE "^sdkVersion:'[0-9]+'" badging-triglyph-release.txt | grep -oE '[0-9]+' | head -1 || true)
+          TGTV=$(grep -oE "^targetSdkVersion:'[0-9]+'" badging-triglyph-release.txt | grep -oE '[0-9]+' | head -1 || true)
+          {
+            echo "sdk=${SDKV:-21}"
+            echo "target=${TGTV:-34}"
+            echo "relsize=$(stat -c%s triglyph-release.apk)"
+            echo "dbgsize=$(stat -c%s triglyph-debug.apk)"
+            echo "relsha=$(sha256sum triglyph-release.apk | cut -d' ' -f1)"
+            echo "dbgsha=$(sha256sum triglyph-debug.apk | cut -d' ' -f1)"
+            echo "prelsize=$(stat -c%s sixseven-release.apk)"
+            echo "pdbgsize=$(stat -c%s sixseven-debug.apk)"
+            echo "prelsha=$(sha256sum sixseven-release.apk | cut -d' ' -f1)"
+            echo "pdbgsha=$(sha256sum sixseven-debug.apk | cut -d' ' -f1)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Самопроверка ядра (строка для заметок к релизу)
+        id: check
+        run: |
+          set -euo pipefail
+          mkdir -p out/classes
+          javac -encoding UTF-8 -nowarn -d out/classes \
+            $(find android/app/src/main/java/ai/triglyph/core -name '*.java')
+          java -cp out/classes ai.triglyph.core.SelfCheck docs/test-vectors.txt | tee selfcheck.txt
+          echo "summary=$(tail -1 selfcheck.txt)" >> "$GITHUB_OUTPUT"
+          echo "groups<<EOF" >> "$GITHUB_OUTPUT"
+          grep -E "^  [a-z]" selfcheck.txt | tr -d '\r' >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: triglyph-apk
+          path: |
+            triglyph-release.apk
+            triglyph-debug.apk
+            sixseven-release.apk
+            sixseven-debug.apk
+          if-no-files-found: error
+
+      - name: Выложить релиз с APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELSIZE: ${{ steps.verify.outputs.relsize }}
+          DBGSIZE: ${{ steps.verify.outputs.dbgsize }}
+          RELSHA: ${{ steps.verify.outputs.relsha }}
+          DBGSHA: ${{ steps.verify.outputs.dbgsha }}
+          PRELSIZE: ${{ steps.verify.outputs.prelsize }}
+          PDBGSIZE: ${{ steps.verify.outputs.pdbgsize }}
+          PRELSHA: ${{ steps.verify.outputs.prelsha }}
+          PDBGSHA: ${{ steps.verify.outputs.pdbgsha }}
+          SDK: ${{ steps.verify.outputs.sdk }}
+          TARGET: ${{ steps.verify.outputs.target }}
+          CHECK: ${{ steps.check.outputs.summary }}
+          GROUPS: ${{ steps.check.outputs.groups }}
+        run: |
+          set -euo pipefail
+          tag="apk-$(date -u +%Y%m%d-%H%M%S)"
+          cat > notes.md <<EOF
+          ## ТРИГЛИФ · TRIGLYPH · 三纹密码
+
+          Приложение для Android: каскадное шифрование
+          **XChaCha20-Poly1305 → AES-256-GCM → Threefish-1024-CTR → HMAC-SHA3-512**,
+          интерфейс на русском, английском и китайском.
+
+          | | |
+          |---|---|
+          | Разрешений | **0** (нет даже доступа в сеть) |
+          | Минимальная версия | Android 5.0 (API $SDK) |
+          | Собрано под | API $TARGET |
+          | \`triglyph-release.apk\` | $RELSIZE байт |
+          | \`triglyph-debug.apk\` | $DBGSIZE байт |
+
+          **Самопроверка ядра на эталонных векторах Python-версии:** \`$CHECK\`
+
+          \`\`\`
+          $GROUPS
+          \`\`\`
+
+          ### Установка
+          1. Скачайте \`triglyph-release.apk\` на телефон.
+          2. Откройте файл; Android спросит разрешение ставить приложения из этого источника — разрешите.
+          3. Готово. Приложению не нужны ни интернет, ни доступ к файлам: файлы вы выбираете сами через системный диалог.
+
+          ### Проверка подлинности файла
+          \`\`\`
+          sha256  triglyph-release.apk  $RELSHA
+          sha256  triglyph-debug.apk    $DBGSHA
+          \`\`\`
+
+          ---
+
+          ## 🐾 six seven triple t — пранк-«вирус» (безобидный!)
+
+          Шуточное приложение для розыгрыша друзей. Открыл — и экран заперт:
+          ✚ мерцающий экран «ТЫ ЗАРАЖЁН ВИРУСОМ тунг тунг сахур окак»,
+          ✚ телефон «не закрывается»,
+          ✚ пароль жертва должна вымурчать у создателя в голосовом чате 🐾.
+
+          А если честно: ноль разрешений, ничего не читает и никуда не отправляет,
+          после правильного кода закрывается как обычно, вкладка «Не открывай!!!»
+          покажет две страшно милые картинки. Код создатель знает — и только он.
+
+          | | |
+          |---|---|
+          | Разрешений | **0** |
+          | \`sixseven-release.apk\` | $PRELSIZE байт |
+          | \`sixseven-debug.apk\` | $PDBGSIZE байт |
+
+          \`\`\`
+          sha256  sixseven-release.apk  $PRELSHA
+          sha256  sixseven-debug.apk    $PDBGSHA
+          \`\`\`
+
+          ### 安装 / Installation
+          中文与英文界面已内置：右上角切换 РУС / ENG / 中文。
+          The UI ships in Russian, English and Chinese — switch in the top right corner.
+          EOF
+          gh release create "$tag" \
+            --title "TRIGLYPH APK ($tag)" \
+            --notes-file notes.md \
+            --target "${{ github.sha }}" \
+            triglyph-release.apk triglyph-debug.apk \
+            sixseven-release.apk sixseven-debug.apk
