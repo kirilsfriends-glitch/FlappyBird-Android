@@ -57,43 +57,47 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Сборка debug и release
+      - name: Сборка debug и release (оба приложения)
         working-directory: android
         run: gradle --no-daemon --stacktrace assembleDebug assembleRelease
+        # собирает и :app (TRIGLYPH), и :prank (six seven triple t) — общий проект
 
-      - name: Проверка готового APK
+      - name: Проверка готовых APK
         id: verify
         run: |
           set -euo pipefail
           cp android/app/build/outputs/apk/release/app-release.apk triglyph-release.apk
           cp android/app/build/outputs/apk/debug/app-debug.apk triglyph-debug.apk
+          cp android/prank/build/outputs/apk/release/prank-release.apk sixseven-release.apk
+          cp android/prank/build/outputs/apk/debug/prank-debug.apk sixseven-debug.apk
 
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           echo "build-tools: $BT"
-          "$BT/aapt2" dump badging triglyph-release.apk > badging.txt
 
-          # ГЛАВНОЕ: приложение обязано просить ноль разрешений
-          if grep -q "uses-permission" badging.txt; then
-            echo "::error::APK запрашивает разрешения!"
-            grep "uses-permission" badging.txt
-            exit 1
-          fi
+          # ГЛАВНОЕ: оба приложения обязаны просить ноль разрешений
+          for apk in triglyph-release.apk sixseven-release.apk; do
+            "$BT/aapt2" dump badging "$apk" > "badging-$(basename "$apk" .apk).txt"
+            if grep -q "uses-permission" "badging-$(basename "$apk" .apk).txt"; then
+              echo "::error::APK $apk запрашивает разрешения!"
+              grep "uses-permission" "badging-$(basename "$apk" .apk).txt"
+              exit 1
+            fi
+            "$BT/apksigner" verify --verbose "$apk"
+          done
 
-          # подпись должна быть валидной, иначе телефон откажется ставить
-          "$BT/apksigner" verify --verbose triglyph-release.apk
-
-          unzip -l triglyph-release.apk | grep -E "assets/test-vectors.txt|classes.dex" || true
-
-          SDKV=$(grep -oE "^sdkVersion:'[0-9]+'" badging.txt | grep -oE '[0-9]+' | head -1 || true)
-          TGTV=$(grep -oE "^targetSdkVersion:'[0-9]+'" badging.txt | grep -oE '[0-9]+' | head -1 || true)
+          SDKV=$(grep -oE "^sdkVersion:'[0-9]+'" badging-triglyph-release.txt | grep -oE '[0-9]+' | head -1 || true)
+          TGTV=$(grep -oE "^targetSdkVersion:'[0-9]+'" badging-triglyph-release.txt | grep -oE '[0-9]+' | head -1 || true)
           {
-            echo "permissions=$(grep -c 'uses-permission' badging.txt || true)"
             echo "sdk=${SDKV:-21}"
             echo "target=${TGTV:-34}"
             echo "relsize=$(stat -c%s triglyph-release.apk)"
             echo "dbgsize=$(stat -c%s triglyph-debug.apk)"
             echo "relsha=$(sha256sum triglyph-release.apk | cut -d' ' -f1)"
             echo "dbgsha=$(sha256sum triglyph-debug.apk | cut -d' ' -f1)"
+            echo "prelsize=$(stat -c%s sixseven-release.apk)"
+            echo "pdbgsize=$(stat -c%s sixseven-debug.apk)"
+            echo "prelsha=$(sha256sum sixseven-release.apk | cut -d' ' -f1)"
+            echo "pdbgsha=$(sha256sum sixseven-debug.apk | cut -d' ' -f1)"
           } >> "$GITHUB_OUTPUT"
 
       - name: Самопроверка ядра (строка для заметок к релизу)
@@ -115,6 +119,8 @@ jobs:
           path: |
             triglyph-release.apk
             triglyph-debug.apk
+            sixseven-release.apk
+            sixseven-debug.apk
           if-no-files-found: error
 
       - name: Выложить релиз с APK
@@ -124,6 +130,10 @@ jobs:
           DBGSIZE: ${{ steps.verify.outputs.dbgsize }}
           RELSHA: ${{ steps.verify.outputs.relsha }}
           DBGSHA: ${{ steps.verify.outputs.dbgsha }}
+          PRELSIZE: ${{ steps.verify.outputs.prelsize }}
+          PDBGSIZE: ${{ steps.verify.outputs.pdbgsize }}
+          PRELSHA: ${{ steps.verify.outputs.prelsha }}
+          PDBGSHA: ${{ steps.verify.outputs.pdbgsha }}
           SDK: ${{ steps.verify.outputs.sdk }}
           TARGET: ${{ steps.verify.outputs.target }}
           CHECK: ${{ steps.check.outputs.summary }}
@@ -163,6 +173,30 @@ jobs:
           sha256  triglyph-debug.apk    $DBGSHA
           \`\`\`
 
+          ---
+
+          ## 🐾 six seven triple t — пранк-«вирус» (безобидный!)
+
+          Шуточное приложение для розыгрыша друзей. Открыл — и экран заперт:
+          ✚ мерцающий экран «ТЫ ЗАРАЖЁН ВИРУСОМ тунг тунг сахур окак»,
+          ✚ телефон «не закрывается»,
+          ✚ пароль жертва должна вымурчать у создателя в голосовом чате 🐾.
+
+          А если честно: ноль разрешений, ничего не читает и никуда не отправляет,
+          после правильного кода закрывается как обычно, вкладка «Не открывай!!!»
+          покажет две страшно милые картинки. Код создатель знает — и только он.
+
+          | | |
+          |---|---|
+          | Разрешений | **0** |
+          | \`sixseven-release.apk\` | $PRELSIZE байт |
+          | \`sixseven-debug.apk\` | $PDBGSIZE байт |
+
+          \`\`\`
+          sha256  sixseven-release.apk  $PRELSHA
+          sha256  sixseven-debug.apk    $PDBGSHA
+          \`\`\`
+
           ### 安装 / Installation
           中文与英文界面已内置：右上角切换 РУС / ENG / 中文。
           The UI ships in Russian, English and Chinese — switch in the top right corner.
@@ -171,4 +205,5 @@ jobs:
             --title "TRIGLYPH APK ($tag)" \
             --notes-file notes.md \
             --target "${{ github.sha }}" \
-            triglyph-release.apk triglyph-debug.apk
+            triglyph-release.apk triglyph-debug.apk \
+            sixseven-release.apk sixseven-debug.apk
