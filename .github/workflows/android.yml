@@ -84,10 +84,12 @@ jobs:
 
           unzip -l triglyph-release.apk | grep -E "assets/test-vectors.txt|classes.dex" || true
 
+          SDKV=$(grep -oE "^sdkVersion:'[0-9]+'" badging.txt | grep -oE '[0-9]+' | head -1 || true)
+          TGTV=$(grep -oE "^targetSdkVersion:'[0-9]+'" badging.txt | grep -oE '[0-9]+' | head -1 || true)
           {
             echo "permissions=$(grep -c 'uses-permission' badging.txt || true)"
-            echo "sdk=$(grep -o "sdkVersion:'[0-9]*'" badging.txt | head -1)"
-            echo "target=$(grep -o "targetSdkVersion:'[0-9]*'" badging.txt | head -1)"
+            echo "sdk=${SDKV:-21}"
+            echo "target=${TGTV:-34}"
             echo "relsize=$(stat -c%s triglyph-release.apk)"
             echo "dbgsize=$(stat -c%s triglyph-debug.apk)"
             echo "relsha=$(sha256sum triglyph-release.apk | cut -d' ' -f1)"
@@ -139,8 +141,8 @@ jobs:
           | | |
           |---|---|
           | Разрешений | **0** (нет даже доступа в сеть) |
-          | Минимальная версия | Android 5.0 ($SDK) |
-          | Собрано под | $TARGET |
+          | Минимальная версия | Android 5.0 (API $SDK) |
+          | Собрано под | API $TARGET |
           | \`triglyph-release.apk\` | $RELSIZE байт |
           | \`triglyph-debug.apk\` | $DBGSIZE байт |
 
